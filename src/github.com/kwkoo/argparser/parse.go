@@ -3,12 +3,67 @@ package argparser
 import (
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"reflect"
 	"strconv"
 	"strings"
 	"unsafe"
 )
+
+var mandatoryParameters map[string]mandatoryParameter
+
+type mandatoryParameter struct {
+	envKey       string
+	flagKey      string
+	fieldKind    reflect.Kind
+	paramPointer unsafe.Pointer
+}
+
+func (p mandatoryParameter) String() string {
+	if p.fieldKind == reflect.String {
+		return *((*string)(p.paramPointer))
+	}
+	if p.fieldKind == reflect.Int {
+		i := *((*int)(p.paramPointer))
+		return strconv.Itoa(i)
+	}
+	if p.fieldKind == reflect.Bool {
+		if *((*bool)(p.paramPointer)) {
+			return "true"
+		}
+		return "false"
+	}
+	return ""
+}
+
+func (p mandatoryParameter) Set(s string) error {
+	log.Printf("Setting config param %v to %v\n", p.flagKey, s)
+	delete(mandatoryParameters, p.flagKey)
+	if p.fieldKind == reflect.String {
+		*(*string)(p.paramPointer) = s
+		return nil
+	}
+	if p.fieldKind == reflect.Int {
+		i, err := strconv.Atoi(s)
+		if err != nil {
+			return err
+		}
+		*(*int)(p.paramPointer) = i
+		return err
+	}
+	if p.fieldKind == reflect.Bool {
+		l := strings.ToLower(s)
+		val := true
+		if l == "0" || l == "f" || l == "false" {
+			val = false
+		}
+		*(*bool)(p.paramPointer) = val
+		return nil
+	}
+
+	return fmt.Errorf("parameter %v is of an unknown type: %v", p.flagKey, p.fieldKind)
+}
 
 // Parse will take in a pointer to a struct and set each field to a value in
 // the environment or a flag from the command line. The environment variable
@@ -19,7 +74,7 @@ import (
 // variable's value.
 //
 // Set the appropriate tag in each field to tell Parse how to handle the field.
-// Parse accepts the following tags: env, flag, default, usage.
+// Parse accepts the following tags: env, flag, default, usage, mandatory.
 //
 // The env tag specifies the environment variable name which corresponds to
 // the field. If this is not specified, Parse uses the uppercase version of
@@ -32,6 +87,10 @@ import (
 // The default tag specifies a default value for the field. This value is used
 // if the corresponding environment variable and command line flag do not
 // exist.
+//
+// The mandatory tag marks the field as mandatory. If the corresponding
+// environment variable and command line flag do not exist, Parse will print an
+// error message and the usage to stderr and return with an error.
 //
 // The usage tag specifies the usage text for the command line flag.
 //
@@ -46,6 +105,7 @@ func Parse(ptrtostruct interface{}) error {
 		return fmt.Errorf("argument must be a pointer to struct - got a pointer to %v instead", structval.Kind())
 	}
 
+	mandatoryParameters = make(map[string]mandatoryParameter)
 	var dummyflag string
 	parseflags := false
 	structtype := structval.Type()
@@ -101,6 +161,19 @@ func Parse(ptrtostruct interface{}) error {
 		usage := structfield.Tag.Get("usage")
 		defaultval := structfield.Tag.Get("default")
 
+		if _, ismandatory := structfield.Tag.Lookup("mandatory"); ismandatory {
+			parseflags = true
+			mp := mandatoryParameter{
+				envKey:       envkey,
+				flagKey:      flagkey,
+				fieldKind:    structfieldkind,
+				paramPointer: unsafe.Pointer(field.Addr().Pointer()),
+			}
+			flag.Var(mp, flagkey, usage)
+			mandatoryParameters[flagkey] = mp
+			continue
+		}
+
 		if structfieldkind == reflect.String {
 			parseflags = true
 			flag.StringVar((*string)(unsafe.Pointer(field.Addr().Pointer())), flagkey, defaultval, usage)
@@ -126,6 +199,15 @@ func Parse(ptrtostruct interface{}) error {
 	}
 	if parseflags {
 		flag.Parse()
+	}
+
+	if count := len(mandatoryParameters); count > 0 {
+		for _, p := range mandatoryParameters {
+			fmt.Fprintf(flag.CommandLine.Output(), "Mandatory flag -%s (or environment variable %s) does not exist.\n", p.flagKey, p.envKey)
+		}
+		mandatoryParameters = nil
+		flag.Usage()
+		return fmt.Errorf("%d mandatory parameters missing", count)
 	}
 
 	return nil
