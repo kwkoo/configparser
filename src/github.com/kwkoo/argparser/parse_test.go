@@ -24,7 +24,7 @@ func ExampleParse() {
 	fmt.Printf("Hostname: %v\n", c.Hostname)
 }
 
-func TestParse(t *testing.T) {
+func TestBasic(t *testing.T) {
 	type Config struct {
 		Hostname string `env:"HOST" flag:"host" default:"localhost"`
 		Port     int    `default:"8080"`
@@ -44,6 +44,8 @@ func TestParse(t *testing.T) {
 		{[]string{"-host", "abc", "-port", "8000", "-async"}, []string{"def", "7000", ""}, Config{"def", 7000, true}, false, false}, // both flags and env set, env should override flags
 		{[]string{"-host", "abc", "-port", "text", "-async"}, []string{"", "", ""}, Config{}, false, true},                          // integer command line flag parsing error
 		{[]string{}, []string{"def", "text", "true"}, Config{"def", 7000, true}, true, false},                                       // environment variable for int field set to non-integer
+		{[]string{}, []string{"", "", ""}, Config{"localhost", 8080, false}, false, false},                                          // nothing set, so defaults shoud kick in
+		{[]string{"-async"}, []string{"", "", "0"}, Config{"localhost", 8080, false}, false, false},                                 // async flag set, but should be overridden by env var
 	}
 
 	for index, table := range tables {
