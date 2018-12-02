@@ -1,5 +1,5 @@
 PREFIX=github.com/kwkoo
-PACKAGE=argparser
+PACKAGE=configparser
 
 GOPATH:=$(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
 GOBIN=$(GOPATH)/bin
