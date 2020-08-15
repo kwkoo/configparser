@@ -5,14 +5,12 @@
 		}
 	],
 	"settings": {
-		"go.gopath": "${workspaceFolder}",
+		"go.useLanguageServer": true,
 		"terminal.integrated.env.osx": {
-			"GOPATH": "${workspaceFolder}",
-			"PATH": "/usr/local/go/bin:/opt/bin:/usr/bin:/usr/sbin:/sbin:/usr/local/bin:${workspaceFolder}/bin"
+			"PATH": "/usr/local/go/bin:/opt/bin:/usr/bin:/usr/sbin:/sbin:/usr/local/bin"
 		},
 		"terminal.integrated.env.linux": {
-			"GOPATH": "${workspaceFolder}",
-			"PATH": "${workspaceFolder}/bin:${env:HOME}/go/bin:${env:PATH}"
+			"PATH": "${env:HOME}/go/bin:${env:PATH}"
 		}
 	},
 }

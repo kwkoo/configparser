@@ -1,20 +1,18 @@
 PREFIX=github.com/kwkoo
 PACKAGE=configparser
 
-GOPATH:=$(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
-GOBIN=$(GOPATH)/bin
 COVERAGEOUTPUT=coverage.out
 COVERAGEHTML=coverage.html
 
 .PHONY: test clean coverage
 
 test:
-	@GOPATH=$(GOPATH) GOBIN=$(GOBIN) go test $(PREFIX)/$(PACKAGE) -v
+	@go test $(PREFIX)/$(PACKAGE) -v
 
 clean:
-	rm -f $(GOPATH)/bin/$(PACKAGE) $(GOPATH)/pkg/*/$(PACKAGE).a $(GOPATH)/$(COVERAGEOUTPUT) $(GOPATH)/$(COVERAGEHTML)
+	@rm -f $(COVERAGEOUTPUT) $(COVERAGEHTML)
 
 coverage:
-	@GOPATH=$(GOPATH) GOBIN=$(GOBIN) go test $(PREFIX)/$(PACKAGE) -cover -coverprofile=$(GOPATH)/$(COVERAGEOUTPUT)
-	@GOPATH=$(GOPATH) GOBIN=$(GOBIN) go tool cover -html=$(GOPATH)/$(COVERAGEOUTPUT) -o $(GOPATH)/$(COVERAGEHTML)
-	open $(GOPATH)/$(COVERAGEHTML)
+	@go test $(PREFIX)/$(PACKAGE) -cover -coverprofile=$(COVERAGEOUTPUT)
+	@go tool cover -html=$(COVERAGEOUTPUT) -o $(COVERAGEHTML)
+	open $(COVERAGEHTML)
