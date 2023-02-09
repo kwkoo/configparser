@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -17,7 +18,7 @@ func ExampleParse() {
 	}
 
 	c := Config{}
-	err := Parse(&c)
+	err := Parse(&c, "")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -59,7 +60,7 @@ func TestBasic(t *testing.T) {
 		flag.CommandLine.SetOutput(stderr)
 
 		result := Config{}
-		err := Parse(&result)
+		err := Parse(&result, "")
 
 		if table.isErr {
 			if err == nil {
@@ -127,7 +128,7 @@ func TestMandatory(t *testing.T) {
 		flag.CommandLine.SetOutput(stderr)
 
 		result := User{}
-		err := Parse(&result)
+		err := Parse(&result, "")
 		if table.isErr {
 			if err == nil {
 				t.Error("Expected an error but did not get it")
@@ -165,6 +166,56 @@ func TestMandatory(t *testing.T) {
 		if result.Address != table.expected.Address {
 			t.Errorf("Expected address %v but got %v instead", table.expected.Address, result.Address)
 		}
+	}
+}
+
+func TestFilesSimple(t *testing.T) {
+	filevalues := make(map[string]string)
+	filevalues["username"] = "admin"
+	filevalues["password"] = "mypassword"
+	filevalues["maxretries"] = "5"
+	filevalues["locked"] = "true"
+	filevalues["param"] = "abc"
+
+	dir, err := createFilesInTempDir(filevalues)
+	if err != nil {
+		t.Errorf("Could not create files in temp dir: %v", err)
+		return
+	}
+
+	defer os.RemoveAll(dir)
+
+	config := struct {
+		Username   string
+		Password   string
+		MaxRetries int
+		Locked     bool
+		RealParam  string `file:"param"`
+	}{}
+
+	if err := Parse(&config, dir); err != nil {
+		t.Errorf("Unexpected error while parsing config directory: %v", err)
+		return
+	}
+
+	if config.Username != "admin" {
+		t.Errorf("username was an unexpected value: %v", config.Username)
+	}
+
+	if config.Password != "mypassword" {
+		t.Errorf("password was an unexpected value: %v", config.Password)
+	}
+
+	if config.MaxRetries != 5 {
+		t.Errorf("maxretries was an unexpected value: %v", config.MaxRetries)
+	}
+
+	if !config.Locked {
+		t.Errorf("locked was an unexpected value: %v", config.Locked)
+	}
+
+	if config.RealParam != "abc" {
+		t.Errorf("realparam was an unexpected value: %v", config.RealParam)
 	}
 }
 
@@ -220,4 +271,18 @@ func setUserEnv(values []string) {
 	} else {
 		os.Setenv("ADDRESS", address)
 	}
+}
+
+func createFilesInTempDir(values map[string]string) (string, error) {
+	dir, err := os.MkdirTemp("", "configparser-test")
+	if err != nil {
+		return "", err
+	}
+	for k, v := range values {
+		if err := os.WriteFile(filepath.Join(dir, k), []byte(v), 0644); err != nil {
+			os.RemoveAll(dir)
+			return "", err
+		}
+	}
+	return dir, nil
 }

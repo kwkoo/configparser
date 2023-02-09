@@ -3,8 +3,10 @@ package configparser
 import (
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
@@ -14,6 +16,7 @@ import (
 var params []*param
 
 type param struct {
+	filename     string
 	envKey       string
 	flagKey      string
 	fieldKind    reflect.Kind
@@ -39,33 +42,37 @@ func (p param) String() string {
 	return ""
 }
 
-func (p *param) Set(s string) error {
+func (p *param) setParam(val, configType, keyName string) error {
 	if p.fieldKind == reflect.String {
 		p.isSet = true
-		*(*string)(p.paramPointer) = s
+		*(*string)(p.paramPointer) = val
 		return nil
 	}
 	if p.fieldKind == reflect.Int {
 		p.isSet = true
-		i, err := strconv.Atoi(s)
+		i, err := strconv.Atoi(val)
 		if err != nil {
-			return err
+			return fmt.Errorf("%s %s must be an integer - instead it is: %v", configType, keyName, val)
 		}
 		*(*int)(p.paramPointer) = i
-		return err
+		return nil
 	}
 	if p.fieldKind == reflect.Bool {
 		p.isSet = true
-		l := strings.ToLower(s)
-		val := true
-		if l == "0" || l == "f" || l == "false" {
-			val = false
+		l := strings.ToLower(val)
+		bval := true
+		if l == "0" || l == "f" || l == "false" || l == "n" || l == "no" {
+			bval = false
 		}
-		*(*bool)(p.paramPointer) = val
+		*(*bool)(p.paramPointer) = bval
 		return nil
 	}
 
-	return fmt.Errorf("parameter %v is of an unknown type: %v", p.flagKey, p.fieldKind)
+	return fmt.Errorf("%s %s is of an unknown type: %v", configType, keyName, val)
+}
+
+func (p *param) Set(s string) error {
+	return p.setParam(s, "command line flag", p.flagKey)
 }
 
 func (p param) IsBoolFlag() bool {
@@ -73,8 +80,9 @@ func (p param) IsBoolFlag() bool {
 }
 
 // Parse will take in a pointer to a struct and set each field to a value in
-// the environment or a flag from the command line. The environment variable
-// will always take precedence over the command line flag.
+// the a file, environment variable, or a flag from the command line. The
+// file will take precedence over the environment variable and the
+// environment variable will take precedence over the command line flag.
 //
 // If a field is of type bool, it will be set to true as long as the
 // corresponding environment variable is set, irrespective of the environment
@@ -103,7 +111,7 @@ func (p param) IsBoolFlag() bool {
 //
 // The usage tag specifies the usage text for the command line flag.
 //
-func Parse(ptrtostruct interface{}) error {
+func Parse(ptrtostruct interface{}, dir string) error {
 	ptrtostructval := reflect.ValueOf(ptrtostruct)
 	if ptrtostructval.Kind() != reflect.Ptr {
 		return fmt.Errorf("argument must be a pointer to struct - got %v instead", ptrtostructval.Kind())
@@ -119,8 +127,9 @@ func Parse(ptrtostruct interface{}) error {
 	fieldcount := structtype.NumField()
 
 	// We'll loop through the parameters twice - once for the command line
-	// flags, and another for the environment variables. This is because
-	// environment variables take precedence over command line flags.
+	// flags, and another for the files and environment variables. This is
+	// because the files and environment variables take precedence over
+	// command line flags.
 	for i := 0; i < fieldcount; i++ {
 		structfield := structtype.FieldByIndex([]int{i})
 		structfieldkind := structfield.Type.Kind()
@@ -145,6 +154,15 @@ func Parse(ptrtostruct interface{}) error {
 			continue
 		}
 
+		filename := structfield.Tag.Get("file")
+		if len(dir) > 0 {
+			if len(filename) == 0 {
+				filename = strings.ToLower(structfield.Name)
+			}
+		} else {
+			filename = ""
+		}
+
 		envkey := structfield.Tag.Get("env")
 		if len(envkey) == 0 {
 			envkey = strings.ToUpper(structfield.Name)
@@ -158,6 +176,7 @@ func Parse(ptrtostruct interface{}) error {
 		_, ismandatory := structfield.Tag.Lookup("mandatory")
 
 		p := param{
+			filename:     filename,
 			envKey:       envkey,
 			flagKey:      flagkey,
 			fieldKind:    structfieldkind,
@@ -175,31 +194,35 @@ func Parse(ptrtostruct interface{}) error {
 
 	flag.Parse()
 
-	// Loop through parameters a second time for the environment variables.
+	// Loop through parameters a second time for the files and environment
+	// variables.
 	for _, p := range params {
+		if len(p.filename) > 0 {
+			filecontents, err := getFileContents(dir, p.filename)
+			if err == nil {
+				err := p.setParam(filecontents, "file", p.filename)
+				if err != nil {
+					return err
+				}
+				// no errors setting param to file contents
+				continue
+			} else {
+				if !os.IsNotExist(err) {
+					// error is not file not found
+					return err
+				}
+				// file does not exist, fall through and check if it's set as
+				// an environment variable
+			}
+		}
+
 		envval, envkeyexists := os.LookupEnv(p.envKey)
 		if !envkeyexists {
 			continue
 		}
 
-		if p.fieldKind == reflect.String {
-			p.isSet = true
-			*(*string)(p.paramPointer) = envval
-		} else if p.fieldKind == reflect.Int {
-			val, err := strconv.Atoi(envval)
-			if err != nil {
-				return fmt.Errorf("environment variable %v must be an integer - instead it is: %v", p.envKey, envval)
-			}
-			p.isSet = true
-			*(*int)(p.paramPointer) = val
-		} else if p.fieldKind == reflect.Bool {
-			p.isSet = true
-			val := true
-			envval = strings.ToLower(envval)
-			if envval == "0" || envval == "f" || envval == "false" || envval == "n" || envval == "no" {
-				val = false
-			}
-			*(*bool)(p.paramPointer) = val
+		if err := p.setParam(envval, "environment variable", p.envKey); err != nil {
+			return err
 		}
 	}
 
@@ -220,4 +243,26 @@ func Parse(ptrtostruct interface{}) error {
 	}
 
 	return nil
+}
+
+// Retrieves a value from an environment variable.
+// This function is only used to retrieve the configuration directory name.
+func RetrieveEnvVarValue(envKey string) string {
+	if len(envKey) == 0 {
+		return ""
+	}
+	return os.Getenv(envKey)
+}
+
+func getFileContents(dir, filename string) (string, error) {
+	f, err := os.Open(filepath.Join(dir, filename))
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	b, err := io.ReadAll(f)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
 }
