@@ -247,11 +247,15 @@ func Parse(ptrtostruct interface{}, dir string) error {
 
 // Retrieves a value from an environment variable.
 // This function is only used to retrieve the configuration directory name.
-func RetrieveEnvVarValue(envKey string) string {
+func RetrieveEnvVarValue(envKey, defaultval string) string {
 	if len(envKey) == 0 {
-		return ""
+		return defaultval
 	}
-	return os.Getenv(envKey)
+	val := os.Getenv(envKey)
+	if val == "" {
+		return defaultval
+	}
+	return val
 }
 
 func getFileContents(dir, filename string) (string, error) {
