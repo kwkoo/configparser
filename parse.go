@@ -245,19 +245,6 @@ func Parse(ptrtostruct interface{}, dir string) error {
 	return nil
 }
 
-// Retrieves a value from an environment variable.
-// This function is only used to retrieve the configuration directory name.
-func RetrieveEnvVarValue(envKey, defaultval string) string {
-	if len(envKey) == 0 {
-		return defaultval
-	}
-	val := os.Getenv(envKey)
-	if val == "" {
-		return defaultval
-	}
-	return val
-}
-
 func getFileContents(dir, filename string) (string, error) {
 	f, err := os.Open(filepath.Join(dir, filename))
 	if err != nil {
@@ -269,4 +256,29 @@ func getFileContents(dir, filename string) (string, error) {
 		return "", err
 	}
 	return string(b), nil
+}
+
+// Retrieves file config directory from an environment variable or command
+// line flag. The environment variable takes precedence.
+// This function is only used to retrieve the configuration directory name.
+func RetrieveConfigDirectory(envKey, flagKey, defaultval string) string {
+	var val string
+	if len(envKey) > 0 {
+		val = os.Getenv(envKey)
+		if len(val) == 0 {
+			return defaultval
+		}
+		return val
+	}
+
+	if len(flagKey) > 0 {
+		flag.StringVar(&val, flagKey, defaultval, "")
+		flag.Parse()
+
+		// reset flag variables
+		flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
+		return val
+	}
+
+	return defaultval
 }

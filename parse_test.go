@@ -18,7 +18,11 @@ func ExampleParse() {
 	}
 
 	c := Config{}
-	err := Parse(&c, "")
+
+	// Directory for config files are defined in the CONFIGDIR environment
+	// variable, the -configdir command line argument, or the /config
+	// directory, in that order.
+	err := Parse(&c, RetrieveConfigDirectory("CONFIGDIR", "configdir", "/config"))
 	if err != nil {
 		log.Fatal(err)
 	}

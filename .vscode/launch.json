@@ -8,20 +8,12 @@
             "name": "Launch",
             "type": "go",
             "request": "launch",
-            "mode": "debug",
-            //"mode": "test",
-            "port": 2345,
-            "host": "127.0.0.1",
-            "program": "${fileDirname}",
+            "mode": "test",
+            "program": "${workspaceFolder}",
             "env": {},
             "args": [
-                //"-test.v",
-                //"-test.run",
-                //"TestIngestCategories"
-                //"-categories",
-                //"${workspaceRoot}/json/categories.json",
-                //"-talks",
-                //"${workspaceRoot}/json/talks.json"
+                "-test.v",
+                //"-test.run"
             ],
             "showLog": true
         }
