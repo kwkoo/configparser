@@ -10,6 +10,11 @@ import (
 	"testing"
 )
 
+type configFile struct {
+	subDirs  string
+	contents string
+}
+
 func ExampleParse() {
 	type Config struct {
 		Hostname string `env:"HOST" flag:"host" usage:"hostname of the server" mandatory:"true"`
@@ -27,6 +32,9 @@ func ExampleParse() {
 		log.Fatal(err)
 	}
 	fmt.Printf("Hostname: %v\n", c.Hostname)
+
+	// Needed because we are calling flag.Parse() each time we run a test.
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
 }
 
 func TestBasic(t *testing.T) {
@@ -99,6 +107,9 @@ func TestBasic(t *testing.T) {
 			t.Errorf("Expected async %v but got %v instead", table.expected.Async, result.Async)
 		}
 	}
+
+	// Needed because we are calling flag.Parse() each time we run a test.
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
 }
 func TestMandatory(t *testing.T) {
 	type User struct {
@@ -171,15 +182,33 @@ func TestMandatory(t *testing.T) {
 			t.Errorf("Expected address %v but got %v instead", table.expected.Address, result.Address)
 		}
 	}
+
+	// Needed because we are calling flag.Parse() each time we run a test.
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
 }
 
 func TestFilesSimple(t *testing.T) {
-	filevalues := make(map[string]string)
-	filevalues["username"] = "admin"
-	filevalues["password"] = "mypassword"
-	filevalues["maxretries"] = "5"
-	filevalues["locked"] = "true"
-	filevalues["param"] = "abc"
+	filevalues := make(map[string]configFile)
+	filevalues["username"] = configFile{
+		subDirs:  "",
+		contents: "admin",
+	}
+	filevalues["password"] = configFile{
+		subDirs:  "",
+		contents: "mypassword",
+	}
+	filevalues["maxretries"] = configFile{
+		subDirs:  "",
+		contents: "5",
+	}
+	filevalues["locked"] = configFile{
+		subDirs:  "",
+		contents: "true",
+	}
+	filevalues["param"] = configFile{
+		subDirs:  "",
+		contents: "abc",
+	}
 
 	dir, err := createFilesInTempDir(filevalues)
 	if err != nil {
@@ -221,6 +250,77 @@ func TestFilesSimple(t *testing.T) {
 	if config.RealParam != "abc" {
 		t.Errorf("realparam was an unexpected value: %v", config.RealParam)
 	}
+
+	// Needed because we are calling flag.Parse() each time we run a test.
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
+}
+
+func TestFilesNestedDirectories(t *testing.T) {
+	filevalues := make(map[string]configFile)
+	filevalues["username"] = configFile{
+		subDirs:  "",
+		contents: "admin",
+	}
+	filevalues["password"] = configFile{
+		subDirs:  "0",
+		contents: "mypassword",
+	}
+	filevalues["maxretries"] = configFile{
+		subDirs:  "1",
+		contents: "5",
+	}
+	filevalues["locked"] = configFile{
+		subDirs:  "1/2",
+		contents: "true",
+	}
+	filevalues["param"] = configFile{
+		subDirs:  "3",
+		contents: "abc",
+	}
+
+	dir, err := createFilesInTempDir(filevalues)
+	if err != nil {
+		t.Errorf("Could not create files in temp dir: %v", err)
+		return
+	}
+
+	defer os.RemoveAll(dir)
+
+	config := struct {
+		Username   string
+		Password   string
+		MaxRetries int
+		Locked     bool
+		RealParam  string `file:"param"`
+	}{}
+
+	if err := Parse(&config, dir); err != nil {
+		t.Errorf("Unexpected error while parsing config directory: %v", err)
+		return
+	}
+
+	if config.Username != "admin" {
+		t.Errorf("username was an unexpected value: %v", config.Username)
+	}
+
+	if config.Password != "mypassword" {
+		t.Errorf("password was an unexpected value: %v", config.Password)
+	}
+
+	if config.MaxRetries != 5 {
+		t.Errorf("maxretries was an unexpected value: %v", config.MaxRetries)
+	}
+
+	if !config.Locked {
+		t.Errorf("locked was an unexpected value: %v", config.Locked)
+	}
+
+	if config.RealParam != "abc" {
+		t.Errorf("realparam was an unexpected value: %v", config.RealParam)
+	}
+
+	// Needed because we are calling flag.Parse() each time we run a test.
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
 }
 
 func setFlags(args []string) {
@@ -277,13 +377,21 @@ func setUserEnv(values []string) {
 	}
 }
 
-func createFilesInTempDir(values map[string]string) (string, error) {
+func createFilesInTempDir(values map[string]configFile) (string, error) {
 	dir, err := os.MkdirTemp("", "configparser-test")
 	if err != nil {
 		return "", err
 	}
 	for k, v := range values {
-		if err := os.WriteFile(filepath.Join(dir, k), []byte(v), 0644); err != nil {
+		if v.subDirs != "" {
+			fullSubDirPath := filepath.Join(dir, v.subDirs)
+			if _, err := os.Stat(fullSubDirPath); os.IsNotExist(err) {
+				if err := os.MkdirAll(fullSubDirPath, os.ModePerm); err != nil {
+					log.Fatalf("could not create directory %s: %v", fullSubDirPath, err)
+				}
+			}
+		}
+		if err := os.WriteFile(filepath.Join(dir, v.subDirs, k), []byte(v.contents), 0644); err != nil {
 			os.RemoveAll(dir)
 			return "", err
 		}

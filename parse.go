@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
@@ -122,6 +123,8 @@ func Parse(ptrtostruct interface{}, dir string) error {
 		return fmt.Errorf("argument must be a pointer to struct - got a pointer to %v instead", structval.Kind())
 	}
 
+	configFiles := allFilesInDirectory(dir)
+
 	params = []*param{}
 	structtype := structval.Type()
 	fieldcount := structtype.NumField()
@@ -155,8 +158,8 @@ func Parse(ptrtostruct interface{}, dir string) error {
 		}
 
 		filename := structfield.Tag.Get("file")
-		if len(dir) > 0 {
-			if len(filename) == 0 {
+		if dir != "" {
+			if filename == "" {
 				filename = strings.ToLower(structfield.Name)
 			}
 		} else {
@@ -197,22 +200,26 @@ func Parse(ptrtostruct interface{}, dir string) error {
 	// Loop through parameters a second time for the files and environment
 	// variables.
 	for _, p := range params {
-		if len(p.filename) > 0 {
-			filecontents, err := getFileContents(dir, p.filename)
-			if err == nil {
-				err := p.setParam(filecontents, "file", p.filename)
-				if err != nil {
-					return err
+		if p.filename != "" {
+			configFilePath, ok := configFiles[p.filename]
+			if ok {
+				filecontents, err := getFileContents(configFilePath)
+				if err == nil {
+					err := p.setParam(filecontents, "file", p.filename)
+					if err != nil {
+						return err
+					}
+					// no errors setting param to file contents
+					continue
+				} else {
+					if !os.IsNotExist(err) {
+						// error is not file not found - i.e. the file exists
+						// and the error is something else
+						return err
+					}
+					// file does not exist, fall through and check if it's set as
+					// an environment variable
 				}
-				// no errors setting param to file contents
-				continue
-			} else {
-				if !os.IsNotExist(err) {
-					// error is not file not found
-					return err
-				}
-				// file does not exist, fall through and check if it's set as
-				// an environment variable
 			}
 		}
 
@@ -245,8 +252,8 @@ func Parse(ptrtostruct interface{}, dir string) error {
 	return nil
 }
 
-func getFileContents(dir, filename string) (string, error) {
-	f, err := os.Open(filepath.Join(dir, filename))
+func getFileContents(filename string) (string, error) {
+	f, err := os.Open(filename)
 	if err != nil {
 		return "", err
 	}
@@ -256,6 +263,28 @@ func getFileContents(dir, filename string) (string, error) {
 		return "", err
 	}
 	return string(b), nil
+}
+
+func allFilesInDirectory(dir string) map[string]string {
+	files := make(map[string]string)
+
+	if dir == "" {
+		return files
+	}
+
+	err := filepath.WalkDir(dir, func(path string, entry fs.DirEntry, err error) error {
+		if !entry.Type().IsRegular() {
+			return nil
+		}
+		files[entry.Name()] = path
+		return nil
+	})
+
+	if err != nil {
+		log.Fatalf("error traversing config directory %s: %v", dir, err)
+	}
+
+	return files
 }
 
 // Retrieves file config directory from an environment variable or command
