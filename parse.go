@@ -80,39 +80,50 @@ func (p param) IsBoolFlag() bool {
 	return p.fieldKind == reflect.Bool
 }
 
-// Parse will take in a pointer to a struct and set each field to a value in
-// the a file, environment variable, or a flag from the command line. The
-// file will take precedence over the environment variable and the
+// Parse will take in a pointer to a struct and set each field to an
+// environment variable or a flag from the command line. The environment
+// variable will take precedence over the command line flag.
+//
+// Parse will invoke ParseWithDir with dir set to an empty string.
+//
+func Parse(ptrtostruct interface{}) error {
+	return ParseWithDir(ptrtostruct, "")
+}
+
+// ParseWithDir will take in a pointer to a struct and set each field to a
+// value in the a file, environment variable, or a flag from the command line.
+// The file will take precedence over the environment variable and the
 // environment variable will take precedence over the command line flag.
 //
 // If a field is of type bool, it will be set to true as long as the
 // corresponding environment variable is set, irrespective of the environment
 // variable's value.
 //
-// Set the appropriate tag in each field to tell Parse how to handle the field.
-// Parse accepts the following tags: env, flag, default, usage, mandatory.
+// Set the appropriate tag in each field to tell ParseWithDir how to handle the
+// field. ParseWithDir accepts the following tags: env, flag, default, usage,
+// mandatory.
 //
 // The env tag specifies the environment variable name which corresponds to
-// the field. If this is not specified, Parse uses the uppercase version of
-// the field name.
+// the field. If this is not specified, ParseWithDir uses the uppercase version
+// of the field name.
 //
 // The flag tag specifies the command line flag name which corresponds to the
-// field. If this is not specified, Parse uses the lowercase version of the
-// field name.
+// field. If this is not specified, ParseWithDir uses the lowercase version of
+// the field name.
 //
 // The default tag specifies a default value for the field. This value is used
 // if the corresponding environment variable and command line flag do not
 // exist.
 //
 // The mandatory tag marks the field as mandatory. If the corresponding
-// environment variable and command line flag do not exist, Parse will print an
-// error message and the usage to stderr and return with an error. Parse will
-// assume that the field is mandatory as long as the tag exists - it doesn't
-// matter what value the tag is set to.
+// environment variable and command line flag do not exist, ParseWithDir will
+// print an error message and the usage to stderr and return with an error.
+// ParseWithDir will assume that the field is mandatory as long as the tag
+// exists - it doesn't matter what value the tag is set to.
 //
 // The usage tag specifies the usage text for the command line flag.
 //
-func Parse(ptrtostruct interface{}, dir string) error {
+func ParseWithDir(ptrtostruct interface{}, dir string) error {
 	ptrtostructval := reflect.ValueOf(ptrtostruct)
 	if ptrtostructval.Kind() != reflect.Ptr {
 		return fmt.Errorf("argument must be a pointer to struct - got %v instead", ptrtostructval.Kind())

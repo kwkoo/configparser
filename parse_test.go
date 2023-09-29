@@ -27,7 +27,7 @@ func ExampleParse() {
 	// Directory for config files are defined in the CONFIGDIR environment
 	// variable, the -configdir command line argument, or the /config
 	// directory, in that order.
-	err := Parse(&c, RetrieveConfigDirectory("CONFIGDIR", "configdir", "/config"))
+	err := ParseWithDir(&c, RetrieveConfigDirectory("CONFIGDIR", "configdir", "/config"))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -72,7 +72,7 @@ func TestBasic(t *testing.T) {
 		flag.CommandLine.SetOutput(stderr)
 
 		result := Config{}
-		err := Parse(&result, "")
+		err := Parse(&result)
 
 		if table.isErr {
 			if err == nil {
@@ -143,7 +143,7 @@ func TestMandatory(t *testing.T) {
 		flag.CommandLine.SetOutput(stderr)
 
 		result := User{}
-		err := Parse(&result, "")
+		err := Parse(&result)
 		if table.isErr {
 			if err == nil {
 				t.Error("Expected an error but did not get it")
@@ -226,7 +226,8 @@ func TestFilesSimple(t *testing.T) {
 		RealParam  string `file:"param"`
 	}{}
 
-	if err := Parse(&config, dir); err != nil {
+	setFlags([]string{})
+	if err := ParseWithDir(&config, dir); err != nil {
 		t.Errorf("Unexpected error while parsing config directory: %v", err)
 		return
 	}
@@ -294,7 +295,8 @@ func TestFilesNestedDirectories(t *testing.T) {
 		RealParam  string `file:"param"`
 	}{}
 
-	if err := Parse(&config, dir); err != nil {
+	setFlags([]string{})
+	if err := ParseWithDir(&config, dir); err != nil {
 		t.Errorf("Unexpected error while parsing config directory: %v", err)
 		return
 	}
